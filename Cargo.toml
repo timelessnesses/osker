@@ -1,0 +1,13 @@
+[package]
+name = "tlns-osker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+poise = "0.6.1"
+serenity = "0.12.2"
+tokio = { version = "1.38.1", features = ["rt-multi-thread"] }
+tlns-tetrio-calcs = { path = "./tlns-tetrio-calcs" }
+
+[workspace]
+members = ["tlns-plotter","tlns-tetrio-calcs"]

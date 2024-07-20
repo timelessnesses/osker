@@ -1,0 +1,10 @@
+Calculations are performed as follows:
+APP: APM/(PPS*60)
+DS/Second: (VS/100)-(APM/60)
+DS/Piece: ((VS/100)-(APM/60))/PPS
+APP+DS/Piece: (((VS/100)-(APM/60))/PPS) + APM/(PPS*60)
+Cheese Index: ((DS/Piece * 150) + (((VS/APM)-2)*50) + (0.6-APP)*125)
+Garbage Effi.: (attack*downstack)/pieces*2
+Area: apm + pps * 45 + vs * 0.444 + app * 185 + dssecond * 175 + dspiece * 450 + garbageEffi * 315
+ Weighted APP: APP - 5 * tan((cheeseIndex/ -30) + 1)
+ Est. TR: 25000/(1+10^(((1500-(0.000013*(((pps * (150 + ((vsapm - 1.66) * 35)) + app * 290 + dspiece * 700))^3) - 0.0196*(((pps * (150 + ((vsapm - 1.66) * 35)) + app * 290 + dspiece * 700))^2) + (12.645*((pps * (150 + ((vsapm - 1.66) * 35)) + app * 290 + dspiece * 700))) - 1005.4))*pi)/(sqrt(((3*ln(10)^2)*60^2)+(2500*((64*pi^2)+(147*ln(10)^2)))))))
