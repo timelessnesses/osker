@@ -12,7 +12,7 @@ use plotters::{
 
 use image::{RgbImage, Rgb};
 
-pub fn plot<const N: usize>(datas: [f64; N], thetas: [String; N], chart_name: String) -> Vec<u8> {
+pub fn plot_radar_one<const N: usize>(datas: [f64; N], thetas: [String; N], chart_name: String) -> Vec<u8> {
     let width = 2000;
     let height = 2000;
     let mut buffer = vec![0; width * height * 3];
@@ -84,4 +84,10 @@ pub fn plot<const N: usize>(datas: [f64; N], thetas: [String; N], chart_name: St
     img.write_to(&mut png_data, image::ImageFormat::Png).unwrap();
 
     png_data.into_inner()
+}
+
+// ignoring slice length with `_` is unstable what the fuck
+pub fn plot_radar_multiple<const N: usize, const FUCK_YOU_RUST: usize>(datas: [[f64; N]; FUCK_YOU_RUST], thetas: [String; N]) -> Vec<u8> {
+    let buffer = Vec::new();
+    buffer
 }
