@@ -91,24 +91,24 @@ impl ProfileStats {
             .await?
             .error_for_status()?
             .json::<serde_json::Value>()
-            .await?["data"]["user"]
+            .await?["data"]
             .clone();
         Ok(Self {
-            apm: response["league"]["apm"].as_f64().unwrap() as f32,
-            pps: response["league"]["pps"].as_f64().unwrap() as f32,
-            vs: response["league"]["vs"].as_f64().unwrap() as f32,
-            rank: Ranks::from_str(&response["league"]["rank"].as_str().unwrap().to_uppercase())
+            apm: response["user"]["league"]["apm"].as_f64().unwrap() as f32,
+            pps: response["user"]["league"]["pps"].as_f64().unwrap() as f32,
+            vs: response["user"]["league"]["vs"].as_f64().unwrap() as f32,
+            rank: Ranks::from_str(&response["user"]["league"]["rank"].as_str().unwrap().to_uppercase())
                 .unwrap(),
-            tr: response["league"]["tr"].as_f64().unwrap() as f32,
-            name: Some(response["username"].as_str().unwrap().to_string()),
+            tr: response["user"]["league"]["rating"].as_f64().unwrap() as f32,
+            name: Some(response["user"]["username"].as_str().unwrap().to_string()),
             pfp: Some(
                 "https://tetr.io/user-content/avatars/".to_string()
-                    + response["_id"].as_str().unwrap()
+                    + response["user"]["_id"].as_str().unwrap()
                     + ".jpg?rv="
-                    + response["avatar_revision"].as_str().unwrap(),
+                    + response["user"]["avatar_revision"].as_u64().unwrap().to_string().as_str(),
             ),
-            rd: response["league"]["rd"].as_f64().unwrap(),
-            glicko: response["league"]["glicko"].as_f64().unwrap(),
+            rd: response["user"]["league"]["rd"].as_f64().unwrap(),
+            glicko: response["user"]["league"]["glicko"].as_f64().unwrap(),
         })
     }
 
@@ -457,6 +457,11 @@ mod tests {
     fn test_inf_ds() {
         let a = DATA.wait();
         assert_eq!(truncate(a.infinite_downstack(), 4), 0.2741)
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pfp() {
+        let _ = ProfileStats::from_username("timelessnesses").await.expect("Failed to fetch profile");
     }
 }
 

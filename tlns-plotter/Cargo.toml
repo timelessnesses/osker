@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 cuid2 = "0.1.2"
-plotly = { version = "0.9.0", features = ["image", "kaleido"] }
+image = "0.25.1"
+plotters = "0.3.6"
