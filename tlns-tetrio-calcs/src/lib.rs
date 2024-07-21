@@ -8,12 +8,12 @@ pub struct ProfileStats {
     pub apm: f32,
     pub pps: f32,
     pub vs: f32,
-    pub rank: Ranks,
-    pub tr: f32,
+    pub rank: Option<Ranks>,
+    pub tr: Option<f64>,
     pub name: Option<String>,
     pub pfp: Option<String>,
-    pub glicko: f64,
-    pub rd: f64,
+    pub glicko: Option<f64>,
+    pub rd: Option<f64>,
 }
 
 macro_rules! enum_from_string {
@@ -30,6 +30,14 @@ macro_rules! enum_from_string {
                 match s.replace("-", "Minus").replace("+", "Plus").as_str() {
                     $(stringify!($variant) => Ok($name::$variant),)*
                     _ => Err(()),
+                }
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $( $name::$variant => write!(f, stringify!($variant)), )*
                 }
             }
         }
@@ -53,7 +61,9 @@ enum_from_string!(Ranks {
     C,
     CMinus,
     DPlus,
-    D
+    D,
+    // unranked
+    Z
 });
 
 pub mod weights {
@@ -97,9 +107,9 @@ impl ProfileStats {
             apm: response["user"]["league"]["apm"].as_f64().unwrap() as f32,
             pps: response["user"]["league"]["pps"].as_f64().unwrap() as f32,
             vs: response["user"]["league"]["vs"].as_f64().unwrap() as f32,
-            rank: Ranks::from_str(&response["user"]["league"]["rank"].as_str().unwrap().to_uppercase())
-                .unwrap(),
-            tr: response["user"]["league"]["rating"].as_f64().unwrap() as f32,
+            rank: Some(Ranks::from_str(&response["user"]["league"]["rank"].as_str().unwrap().to_uppercase())
+                .unwrap()),
+            tr: Some(response["user"]["league"]["rating"].as_f64().unwrap()),
             name: Some(response["user"]["username"].as_str().unwrap().to_string()),
             pfp: Some(
                 "https://tetr.io/user-content/avatars/".to_string()
@@ -107,9 +117,21 @@ impl ProfileStats {
                     + ".jpg?rv="
                     + response["user"]["avatar_revision"].as_u64().unwrap().to_string().as_str(),
             ),
-            rd: response["user"]["league"]["rd"].as_f64().unwrap(),
-            glicko: response["user"]["league"]["glicko"].as_f64().unwrap(),
+            rd: Some(response["user"]["league"]["rd"].as_f64().unwrap()),
+            glicko: Some(response["user"]["league"]["glicko"].as_f64().unwrap()),
         })
+    }
+
+    pub fn from_stat(apm: f32, pps: f32, vs: f32) -> Self {
+        Self {
+            apm, pps, vs,
+            rank: None,
+            tr: None,
+            name: None,
+            pfp: None,
+            glicko: None,
+            rd: None
+        }
     }
 
     #[inline(always)]
@@ -183,7 +205,10 @@ impl ProfileStats {
 
     #[inline(always)]
     pub fn accuracy_tr(&self) -> f64 {
-        self.estimated_tr() - self.tr as f64
+        match self.tr {
+            Some(i) => self.estimated_tr() - i,
+            None => 0.0
+        }
     }
 
     #[inline(always)]
@@ -346,12 +371,12 @@ mod tests {
         apm: 66.09,
         pps: 2.07,
         vs: 135.65,
-        rank: Ranks::U,
-        tr: 23684.48,
+        rank: Some(Ranks::U),
+        tr: Some(23684.48),
         name: None,
         pfp: None,
-        glicko: 2257.86,
-        rd: 66.04,
+        glicko: Some(2257.86),
+        rd: Some(66.04),
     });
 
     #[test]
