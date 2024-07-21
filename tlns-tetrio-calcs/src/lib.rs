@@ -56,7 +56,7 @@ enum_from_string!(Ranks {
     D
 });
 
-mod weights {
+pub mod weights {
     // Weights for area stat
     pub const APM_WEIGHT: usize = 1;
     pub const PPS_WEIGHT: usize = 45;
