@@ -1,16 +1,10 @@
 use std::str::FromStr;
 
-use chrono;
-use dashmap;
-use poise;
 use rayon::{
     self,
     iter::{IntoParallelRefIterator, ParallelExtend, ParallelIterator},
 };
-use serde_json;
-use serenity;
 use tlns_tetrio_calcs::ProfileStats;
-use tokio;
 
 mod commands;
 mod db;
@@ -47,7 +41,10 @@ fn setup_logging() {
         .level_for("serenity::gateway::shard", log::LevelFilter::Warn)
         .level_for("serenity::gateway::ws", log::LevelFilter::Warn)
         .level_for("serenity::http::ratelimiting", log::LevelFilter::Warn)
-        .level_for("serenity::gateway::bridge::shard_manager", log::LevelFilter::Info)
+        .level_for(
+            "serenity::gateway::bridge::shard_manager",
+            log::LevelFilter::Info,
+        )
         .level_for("h2", log::LevelFilter::Off)
         .level_for("serenity::http::request", log::LevelFilter::Warn)
         .level_for("serenity::http::client", log::LevelFilter::Warn)
@@ -94,20 +91,22 @@ async fn initialize_data(
                 tr: Some(d["league"]["rating"].as_f64().unwrap()),
                 glicko: Some(d["league"]["glicko"].as_f64().unwrap()),
                 name: Some(d["username"].as_str().unwrap().to_string()),
-                pfp: Some(
-                    format!("https://tetr.io/user-content/avatars/{}.jpg?rv={}",
-                        d["_id"].as_str().unwrap(),
-                        d["avatar_revision"].as_u64().unwrap_or(0))
-                ),
+                pfp: Some(format!(
+                    "https://tetr.io/user-content/avatars/{}.jpg?rv={}",
+                    d["_id"].as_str().unwrap(),
+                    d["avatar_revision"].as_u64().unwrap_or(0)
+                )),
                 rd: Some(d["league"]["rd"].as_f64().unwrap()),
                 is_real: true,
             }),
     );
 
     // Initialize the stuffs DashMap
-    let stuffs: dashmap::DashMap<tlns_tetrio_calcs::Ranks, PlayerSummarization> = dashmap::DashMap::new();
+    let stuffs: dashmap::DashMap<tlns_tetrio_calcs::Ranks, PlayerSummarization> =
+        dashmap::DashMap::new();
     locked.par_iter().for_each(|v| {
-        stuffs.entry(v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z))
+        stuffs
+            .entry(v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z))
             .and_modify(|a| {
                 a.count += 1;
                 a.apm += v.apm as f64;
@@ -130,34 +129,36 @@ async fn initialize_data(
     });
     let mut locked2 = a.lock().await;
     locked2.clear();
-    locked2.par_extend(
-        stuffs
-            .par_iter()
-            .map(|v| {
-                let rank = v.key().to_string().to_uppercase().replace("PLUS", "+").replace("MINUS", "-");
-                ProfileStats {
-                    apm: (v.value().apm / v.value().count as f64) as f32,
-                    pps: (v.value().pps / v.value().count as f64) as f32,
-                    vs: (v.value().vs / v.value().count as f64) as f32,
-                    rank: Some(v.value().rank),
-                    tr: Some(v.value().tr / v.value().count as f64),
-                    name: Some(format!("$avg{}", rank)),
-                    pfp: None,
-                    glicko: Some(v.value().glicko / v.value().count as f64),
-                    rd: Some(v.value().rd / v.value().count as f64),
-                    is_real: false,
-                }
-            }),
-    );
+    locked2.par_extend(stuffs.par_iter().map(|v| {
+        let rank = v
+            .key()
+            .to_string()
+            .to_uppercase()
+            .replace("PLUS", "+")
+            .replace("MINUS", "-");
+        ProfileStats {
+            apm: (v.value().apm / v.value().count as f64) as f32,
+            pps: (v.value().pps / v.value().count as f64) as f32,
+            vs: (v.value().vs / v.value().count as f64) as f32,
+            rank: Some(v.value().rank),
+            tr: Some(v.value().tr / v.value().count as f64),
+            name: Some(format!("$avg{}", rank)),
+            pfp: None,
+            glicko: Some(v.value().glicko / v.value().count as f64),
+            rd: Some(v.value().rd / v.value().count as f64),
+            is_real: false,
+        }
+    }));
     // println!("{:#?}", locked);
     log::info!("Done processing");
 }
 
-
 #[tokio::main]
 async fn main() {
     setup_logging();
-    better_panic::Settings::new().verbosity(better_panic::Verbosity::Full).install();
+    better_panic::Settings::new()
+        .verbosity(better_panic::Verbosity::Full)
+        .install();
     let db = db::connect_to_db()
         .await
         .expect("Failed to connect to database");
@@ -166,18 +167,18 @@ async fn main() {
     let player_list = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let average_players = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
     initialize_data(&player_list, &average_players).await;
-    
+
     let cloned_player_list = player_list.clone();
     let cloned_average_players = average_players.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::new(5, 0)).await;
-            if let Err(_) = cloned.ping().await {
+            if cloned.ping().await.is_err() {
                 panic!("Database disconnected!!");
             }
         }
     });
-    
+
     tokio::spawn(async move {
         loop {
             log::info!("Sleep for 5 minutes");
@@ -185,7 +186,7 @@ async fn main() {
             initialize_data(&cloned_player_list, &cloned_average_players).await;
         }
     });
-    
+
     let s = state::States {
         up_when: chrono::Local::now(),
         player_lists: player_list.clone(),
@@ -212,7 +213,8 @@ async fn main() {
         .initialize_owners(true)
         .build();
     let mut client = serenity::Client::builder(
-        std::env::var("OSKER_TOKEN").expect("Token not found"), poise::serenity_prelude::GatewayIntents::all()
+        std::env::var("OSKER_TOKEN").expect("Token not found"),
+        poise::serenity_prelude::GatewayIntents::all(),
     )
     .framework(bot)
     .await

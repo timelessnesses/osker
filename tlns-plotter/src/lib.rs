@@ -70,11 +70,14 @@ pub fn plot_radar_one<const N: usize>(
         }
 
         for (angle, theta) in angles.iter().zip(thetas.iter()) {
+            // hacks
+            /* let x_offset = 0.2 * angle.cos();
+            let y_offset = 0.2 * angle.sin(); */
             chart
                 .draw_series(std::iter::once(Text::new(
                     theta.clone(),
-                    (1.2 * angle.cos(), 1.2 * angle.sin()),
-                    ("sans-serif", 150),
+                    (angle.cos(), angle.sin()),
+                    ("sans-serif", 65),
                 )))
                 .unwrap();
         }

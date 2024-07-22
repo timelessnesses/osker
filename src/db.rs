@@ -1,6 +1,3 @@
-use dotenv;
-use sea_orm;
-use std;
 
 pub async fn connect_to_db() -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     dotenv::dotenv().ok();

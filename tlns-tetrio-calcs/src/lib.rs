@@ -94,7 +94,7 @@ pub mod weights {
 #[derive(Debug)]
 pub enum Errors {
     FailedToSendRequest(reqwest::Error),
-    UserNotFound
+    UserNotFound,
 }
 
 impl std::error::Error for Errors {}
@@ -108,15 +108,19 @@ impl ProfileStats {
     pub async fn from_username<'b>(username: &'b str) -> Result<Self, Errors> {
         let client = ClientBuilder::new()
             .user_agent("tlns-tetrio-calcs")
-            .build().map_err(Errors::FailedToSendRequest)?;
+            .build()
+            .map_err(Errors::FailedToSendRequest)?;
         let user_api = API.to_string() + "users/" + username;
         let response: serde_json::Value = client
             .get(user_api)
             .send()
-            .await.map_err(Errors::FailedToSendRequest)?
-            .error_for_status().map_err(Errors::FailedToSendRequest)?
+            .await
+            .map_err(Errors::FailedToSendRequest)?
+            .error_for_status()
+            .map_err(Errors::FailedToSendRequest)?
             .json::<serde_json::Value>()
-            .await.map_err(Errors::FailedToSendRequest)?;
+            .await
+            .map_err(Errors::FailedToSendRequest)?;
         if response["success"].as_bool().unwrap() == false {
             return Err(Errors::UserNotFound);
         }

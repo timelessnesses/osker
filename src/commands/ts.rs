@@ -4,15 +4,16 @@ use poise;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex;
 
-const FUNNY_IMAGE: &'static str = "https://statics.timelessnesses.me/poiuu_drawings/sd.png";
-const DETECT_AVG_PATTERN: &'static str = r"(?m)^\$avg([a-zA-Z])$"; // my genius brain made this yay
-pub const ZERO_WIDTH_SPACE: &'static str = "\u{200b}";
+const FUNNY_IMAGE: &str = "https://statics.timelessnesses.me/poiuu_drawings/sd.png";
+const DETECT_AVG_PATTERN: &str = r"(?m)^\$avg([a-zA-Z])$"; // my genius brain made this yay
+pub const ZERO_WIDTH_SPACE: &str = "\u{200b}";
 
 /// Displays stats of a user in a table list.
 #[poise::command(prefix_command, slash_command)]
 pub async fn ts(
     ctx: crate::types::Context<'_>,
-    #[description = "Argument that supports custom 'APM PPS VS' value or username or $avg`Rank`"] args: Vec<String>,
+    #[description = "Argument that supports custom 'APM PPS VS' value or username or $avg`Rank`"]
+    args: Vec<String>,
 ) -> Result<(), crate::types::Error> {
     ctx.defer().await?;
 
@@ -30,7 +31,7 @@ pub async fn ts(
             args[2].parse()?,
         );
     } else {
-        let r = regex::Regex::new(&DETECT_AVG_PATTERN)?;
+        let r = regex::Regex::new(DETECT_AVG_PATTERN)?;
         if let Some(avg_rank) = r.captures(&args[0]) {
             let rank = avg_rank
                 .get(1)
@@ -44,17 +45,15 @@ pub async fn ts(
             } else {
                 return Err(crate::errors::Errors::RankNotFoundError.into());
             };
+        } else if let Some(p) = players_list
+            .par_iter()
+            .find_first(|i| i.name.clone().unwrap_or_default() == args[0])
+        {
+            player = p.clone();
         } else {
-            if let Some(p) = players_list
-                .par_iter()
-                .find_first(|i| i.name.clone().unwrap_or_else(|| "".to_string()) == args[0])
-            {
-                player = p.clone();
-            } else {
-                player = tlns_tetrio_calcs::ProfileStats::from_username(&args[0]).await?;
-                should_add = true;
-                fetched_from_api = true;
-            }
+            player = tlns_tetrio_calcs::ProfileStats::from_username(&args[0]).await?;
+            should_add = true;
+            fetched_from_api = true;
         }
     }
 
@@ -62,10 +61,17 @@ pub async fn ts(
         players_list.push(player.clone());
     }
 
-    let embed = build_player_embed(&player, match is_avg_rank {
-        true => Some(format!("AVERAGE STATS ON RANK {}", player.rank.unwrap().to_string())),
-        false => None
-    }, fetched_from_api);
+    let embed = build_player_embed(
+        &player,
+        match is_avg_rank {
+            true => Some(format!(
+                "AVERAGE STATS ON RANK {}",
+                player.rank.unwrap()
+            )),
+            false => None,
+        },
+        fetched_from_api,
+    );
     ctx.send(poise::CreateReply::default().embed(embed).reply(true))
         .await?;
     // ctx.say(format!("This request is from ch.tetr.io API: {fetched_from_api}")).await?;
@@ -75,7 +81,7 @@ pub async fn ts(
 fn build_player_embed(
     player: &tlns_tetrio_calcs::ProfileStats,
     custom_title: Option<String>,
-    is_fetched_from_api: bool
+    is_fetched_from_api: bool,
 ) -> poise::serenity_prelude::CreateEmbed {
     poise::serenity_prelude::CreateEmbed::new()
         .colour(poise::serenity_prelude::Color::from_rgb(0, 153, 255))
@@ -92,7 +98,7 @@ fn build_player_embed(
             }
         })
         .url(match player.is_real {
-            true => "https://ch.tetr.io/u/".to_string() + &player.name.as_ref().unwrap(),
+            true => "https://ch.tetr.io/u/".to_string() + player.name.as_ref().unwrap(),
             false => "https://ch.tetr.io".to_string(),
         })
         .author(
