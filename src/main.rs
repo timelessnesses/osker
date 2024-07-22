@@ -5,7 +5,7 @@ use dashmap;
 use poise;
 use rayon::{
     self,
-    iter::{IntoParallelRefIterator, ParallelIterator},
+    iter::{IntoParallelRefIterator, ParallelExtend, ParallelIterator},
 };
 use serde_json;
 use serenity;
@@ -19,6 +19,7 @@ mod types;
 
 mod errors;
 
+#[derive(Debug)]
 struct PlayerSummarization {
     apm: f64,
     pps: f64,
@@ -30,25 +31,57 @@ struct PlayerSummarization {
     rd: f64,
 }
 
+fn setup_logging() {
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{}] [{}] [{}] {}",
+                chrono::Local::now().format("%Y/%m/%d][%H:%M:%S"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Debug)
+        .level_for("tracing", log::LevelFilter::Off)
+        .level_for("serenity::gateway::shard", log::LevelFilter::Warn)
+        .level_for("serenity::gateway::ws", log::LevelFilter::Warn)
+        .level_for("serenity::http::ratelimiting", log::LevelFilter::Warn)
+        .level_for("serenity::gateway::bridge::shard_manager", log::LevelFilter::Info)
+        .level_for("h2", log::LevelFilter::Off)
+        .level_for("serenity::http::request", log::LevelFilter::Warn)
+        .level_for("serenity::http::client", log::LevelFilter::Warn)
+        .level_for("rustls", log::LevelFilter::Off)
+        .level_for("hyper", log::LevelFilter::Warn)
+        .level_for("hyper_util", log::LevelFilter::Warn)
+        .level_for("tungstenite", log::LevelFilter::Off)
+        .chain(std::io::stdout())
+        .chain(fern::log_file("osker.log").unwrap())
+        .apply()
+        .unwrap();
+}
+
 async fn initialize_data(
-    p: &mut std::sync::Arc<tokio::sync::Mutex<Vec<tlns_tetrio_calcs::ProfileStats>>>,
-    a: &mut std::sync::Arc<tokio::sync::Mutex<Vec<tlns_tetrio_calcs::ProfileStats>>>,
+    p: &std::sync::Arc<tokio::sync::Mutex<Vec<tlns_tetrio_calcs::ProfileStats>>>,
+    a: &std::sync::Arc<tokio::sync::Mutex<Vec<tlns_tetrio_calcs::ProfileStats>>>,
 ) {
+    log::info!("Reinitializing data");
     let mut locked = p.lock().await;
     let players = reqwest::get("https://ch.tetr.io/api/users/lists/league/all")
         .await
         .expect("Failed to fetch players data")
         .error_for_status()
-        .expect("Server respond non 200")
+        .expect("Server responded with non-200 status")
         .json::<serde_json::Value>()
         .await
-        .expect("Failed to turn response to JSON")["data"]["users"]
+        .expect("Failed to parse response as JSON")["data"]["users"]
         .clone();
+    log::info!("Got new data from API");
     locked.clear();
-    locked.append(
-        &mut players
+    locked.par_extend(
+        players
             .as_array()
-            .expect("Somehow the users array isn't an array")
+            .expect("Users data is not an array")
             .par_iter()
             .map(|d| tlns_tetrio_calcs::ProfileStats {
                 apm: d["league"]["apm"].as_f64().unwrap() as f32,
@@ -56,79 +89,75 @@ async fn initialize_data(
                 vs: d["league"]["vs"].as_f64().unwrap() as f32,
                 rank: Some(
                     tlns_tetrio_calcs::Ranks::from_str(d["league"]["rank"].as_str().unwrap())
-                        .expect("Not expected rank"),
+                        .expect("Unexpected rank format"),
                 ),
                 tr: Some(d["league"]["rating"].as_f64().unwrap()),
                 glicko: Some(d["league"]["glicko"].as_f64().unwrap()),
                 name: Some(d["username"].as_str().unwrap().to_string()),
                 pfp: Some(
-                    "https://tetr.io/user-content/avatars/".to_string()
-                        + d["_id"].as_str().unwrap()
-                        + ".jpg?rv="
-                        + d["avatar_revision"].as_u64().unwrap().to_string().as_str(),
+                    format!("https://tetr.io/user-content/avatars/{}.jpg?rv={}",
+                        d["_id"].as_str().unwrap(),
+                        d["avatar_revision"].as_u64().unwrap_or(0))
                 ),
                 rd: Some(d["league"]["rd"].as_f64().unwrap()),
                 is_real: true,
-            })
-            .collect::<Vec<tlns_tetrio_calcs::ProfileStats>>(),
+            }),
     );
-    let stuffs: dashmap::DashMap<tlns_tetrio_calcs::Ranks, PlayerSummarization> =
-        dashmap::DashMap::new();
+
+    // Initialize the stuffs DashMap
+    let stuffs: dashmap::DashMap<tlns_tetrio_calcs::Ranks, PlayerSummarization> = dashmap::DashMap::new();
     locked.par_iter().for_each(|v| {
-        if stuffs.contains_key(&v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z)) {
-            stuffs.insert(
-                v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z),
-                PlayerSummarization {
-                    apm: v.apm as f64,
-                    pps: v.pps as f64,
-                    vs: v.vs as f64,
-                    rank: v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z),
-                    tr: v.tr.unwrap_or(0.0),
-                    glicko: v.glicko.unwrap_or(0.0),
-                    rd: v.rd.unwrap_or(0.0),
-                    count: 1,
-                },
-            );
-        } else {
-            stuffs
-                .entry(v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z))
-                .and_modify(|a| {
-                    a.count += 1;
-                    a.apm += v.apm as f64;
-                    a.pps += v.pps as f64;
-                    a.vs += v.vs as f64;
-                    a.tr += v.tr.unwrap_or(0.0);
-                    a.glicko += v.glicko.unwrap_or(0.0);
-                    a.rd += v.rd.unwrap_or(0.0);
-                });
-        }
+        stuffs.entry(v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z))
+            .and_modify(|a| {
+                a.count += 1;
+                a.apm += v.apm as f64;
+                a.pps += v.pps as f64;
+                a.vs += v.vs as f64;
+                a.tr += v.tr.unwrap_or(0.0);
+                a.glicko += v.glicko.unwrap_or(0.0);
+                a.rd += v.rd.unwrap_or(0.0);
+            })
+            .or_insert(PlayerSummarization {
+                apm: v.apm as f64,
+                pps: v.pps as f64,
+                vs: v.vs as f64,
+                rank: v.rank.unwrap_or(tlns_tetrio_calcs::Ranks::Z),
+                count: 1,
+                tr: v.tr.unwrap_or(0.0),
+                glicko: v.glicko.unwrap_or(0.0),
+                rd: v.rd.unwrap_or(0.0),
+            });
     });
     let mut locked2 = a.lock().await;
     locked2.clear();
-    locked2.append(
-        &mut stuffs
+    locked2.par_extend(
+        stuffs
             .par_iter()
             .map(|v| {
-                let rank = v.rank.to_string();
+                let rank = v.key().to_string().to_uppercase().replace("PLUS", "+").replace("MINUS", "-");
                 ProfileStats {
-                    apm: (v.apm / v.count as f64) as f32,
-                    pps: (v.pps / v.count as f64) as f32,
-                    vs: (v.vs / v.count as f64) as f32,
-                    rank: Some(v.rank),
-                    tr: Some(v.tr),
-                    name: Some(format!("$avg{rank}")),
+                    apm: (v.value().apm / v.value().count as f64) as f32,
+                    pps: (v.value().pps / v.value().count as f64) as f32,
+                    vs: (v.value().vs / v.value().count as f64) as f32,
+                    rank: Some(v.value().rank),
+                    tr: Some(v.value().tr / v.value().count as f64),
+                    name: Some(format!("$avg{}", rank)),
                     pfp: None,
-                    glicko: Some(v.glicko),
-                    rd: Some(v.rd),
+                    glicko: Some(v.value().glicko / v.value().count as f64),
+                    rd: Some(v.value().rd / v.value().count as f64),
                     is_real: false,
                 }
-            })
-            .collect::<Vec<tlns_tetrio_calcs::ProfileStats>>(),
+            }),
     );
+    // println!("{:#?}", locked);
+    log::info!("Done processing");
 }
+
 
 #[tokio::main]
 async fn main() {
+    setup_logging();
+    better_panic::Settings::new().verbosity(better_panic::Verbosity::Full).install();
     let db = db::connect_to_db()
         .await
         .expect("Failed to connect to database");
@@ -136,9 +165,10 @@ async fn main() {
 
     let player_list = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let average_players = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
-
-    let mut cloned_pl = std::sync::Arc::clone(&player_list);
-    let mut cloned_avg_p = std::sync::Arc::clone(&average_players);
+    initialize_data(&player_list, &average_players).await;
+    
+    let cloned_player_list = player_list.clone();
+    let cloned_average_players = average_players.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::new(5, 0)).await;
@@ -147,16 +177,19 @@ async fn main() {
             }
         }
     });
+    
     tokio::spawn(async move {
         loop {
-            initialize_data(&mut cloned_pl, &mut cloned_avg_p).await;
+            log::info!("Sleep for 5 minutes");
             tokio::time::sleep(std::time::Duration::new(300, 0)).await;
+            initialize_data(&cloned_player_list, &cloned_average_players).await;
         }
     });
+    
     let s = state::States {
         up_when: chrono::Local::now(),
-        player_lists: player_list,
-        avg_players: average_players,
+        player_lists: player_list.clone(),
+        avg_players: average_players.clone(),
     };
     let bot = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -165,7 +198,7 @@ async fn main() {
                 mention_as_prefix: true,
                 ..Default::default()
             },
-            commands: vec![commands::ts::ts()],
+            commands: vec![commands::ts::ts(), commands::vs::vs()],
             ..Default::default()
         })
         .setup(move |ctx, _ready, framework| {
@@ -173,28 +206,17 @@ async fn main() {
                 poise::builtins::register_globally(ctx, &framework.options().commands)
                     .await
                     .expect("Failed to register app commands");
-                return Ok(s);
+                Ok(s)
             })
         })
         .initialize_owners(true)
         .build();
     let mut client = serenity::Client::builder(
-        std::env::var("OSKER_TOKEN").expect("OSKER_TOKEN"),
-        serenity::model::gateway::GatewayIntents::all(),
+        std::env::var("OSKER_TOKEN").expect("Token not found"), poise::serenity_prelude::GatewayIntents::all()
     )
     .framework(bot)
-    .status(serenity::model::user::OnlineStatus::Idle)
-    .activity(serenity::gateway::ActivityData {
-        name: "man these formula will fuck me up".to_string(),
-        kind: serenity::model::gateway::ActivityType::Watching,
-        state: None,
-        url: None,
-    })
     .await
-    .expect("Failed to login");
-    client
-        .start_autosharded()
-        .await
-        .expect("Unexpected error, oh well.");
-    log::info!("Bot started!");
+    .expect("Error creating client");
+
+    client.start().await.expect("Error starting client");
 }

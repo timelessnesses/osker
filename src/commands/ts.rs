@@ -5,13 +5,14 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex;
 
 const FUNNY_IMAGE: &'static str = "https://statics.timelessnesses.me/poiuu_drawings/sd.png";
-const DETECT_AVG_PATTERN: &'static str = r"^\$avg([a-zA-Z])$";
+const DETECT_AVG_PATTERN: &'static str = r"(?m)^\$avg([a-zA-Z])$"; // my genius brain made this yay
 pub const ZERO_WIDTH_SPACE: &'static str = "\u{200b}";
 
+/// Displays stats of a user in a table list.
 #[poise::command(prefix_command, slash_command)]
 pub async fn ts(
     ctx: crate::types::Context<'_>,
-    args: Vec<String>,
+    #[description = "Argument that supports custom 'APM PPS VS' value or username or $avg`Rank`"] args: Vec<String>,
 ) -> Result<(), crate::types::Error> {
     ctx.defer().await?;
 
@@ -19,6 +20,8 @@ pub async fn ts(
     let average_players = ctx.data().avg_players.lock().await;
     let mut should_add = false;
     let player: tlns_tetrio_calcs::ProfileStats;
+    let mut fetched_from_api = false;
+    let mut is_avg_rank = false;
 
     if args.len() == 3 {
         player = tlns_tetrio_calcs::ProfileStats::from_stat(
@@ -36,6 +39,7 @@ pub async fn ts(
                 i.rank.unwrap()
                     == tlns_tetrio_calcs::Ranks::from_str(&rank.as_str().to_lowercase()).unwrap()
             }) {
+                is_avg_rank = true;
                 avg.clone()
             } else {
                 return Err(crate::errors::Errors::RankNotFoundError.into());
@@ -49,6 +53,7 @@ pub async fn ts(
             } else {
                 player = tlns_tetrio_calcs::ProfileStats::from_username(&args[0]).await?;
                 should_add = true;
+                fetched_from_api = true;
             }
         }
     }
@@ -57,24 +62,33 @@ pub async fn ts(
         players_list.push(player.clone());
     }
 
-    let embed = build_player_embed(&player);
+    let embed = build_player_embed(&player, match is_avg_rank {
+        true => Some(format!("AVERAGE STATS ON RANK {}", player.rank.unwrap().to_string())),
+        false => None
+    }, fetched_from_api);
     ctx.send(poise::CreateReply::default().embed(embed).reply(true))
         .await?;
+    // ctx.say(format!("This request is from ch.tetr.io API: {fetched_from_api}")).await?;
     Ok(())
 }
 
 fn build_player_embed(
     player: &tlns_tetrio_calcs::ProfileStats,
+    custom_title: Option<String>,
+    is_fetched_from_api: bool
 ) -> poise::serenity_prelude::CreateEmbed {
     poise::serenity_prelude::CreateEmbed::new()
         .colour(poise::serenity_prelude::Color::from_rgb(0, 153, 255))
-        .title(match player.is_real {
-            true => player.name.as_ref().unwrap().to_string(),
-            false => {
-                format!(
-                    "ADVANCED STATS OF [{}, {}, {}]",
-                    player.apm, player.pps, player.vs
-                )
+        .title(match custom_title {
+            Some(m) => m,
+            None => match player.is_real {
+                true => player.name.as_ref().unwrap().to_string(),
+                false => {
+                    format!(
+                        "ADVANCED STATS OF [{}, {}, {}]",
+                        player.apm, player.pps, player.vs
+                    )
+                }
             }
         })
         .url(match player.is_real {
@@ -123,4 +137,8 @@ fn build_player_embed(
         , true)
         .field("Want to know more?", "Check the calculation formulas code in https://github.com/timelessnesses/osker/blob/main/tlns-tetrio-calcs/src/lib.rs ! ^w^", true)
         .timestamp(poise::serenity_prelude::Timestamp::now())
+        .footer(poise::serenity_prelude::CreateEmbedFooter::new(match is_fetched_from_api {
+            true => "This command used ch.tetr.io API",
+            false => "This command used it's own interal cache (that is refreshed every 5 minutes)"
+        }))
 }

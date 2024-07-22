@@ -1,2 +1,4 @@
 /target
 .env
+osker.log
+*.db

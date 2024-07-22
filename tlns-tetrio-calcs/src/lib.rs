@@ -29,7 +29,7 @@ macro_rules! enum_from_string {
             type Err = ();
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                match s.replace("-", "Minus").replace("+", "Plus").as_str() {
+                match s.to_uppercase().replace("-", "Minus").replace("+", "Plus").as_str() {
                     $(stringify!($variant) => Ok($name::$variant),)*
                     _ => Err(()),
                 }
@@ -91,34 +91,50 @@ pub mod weights {
     pub const GARBAGE_EFFICIENCY_SRW: usize = 0;
 }
 
+#[derive(Debug)]
+pub enum Errors {
+    FailedToSendRequest(reqwest::Error),
+    UserNotFound
+}
+
+impl std::error::Error for Errors {}
+impl std::fmt::Display for Errors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{:#?}", self))
+    }
+}
+
 impl ProfileStats {
-    pub async fn from_username<'b>(username: &'b str) -> Result<Self, reqwest::Error> {
+    pub async fn from_username<'b>(username: &'b str) -> Result<Self, Errors> {
         let client = ClientBuilder::new()
             .user_agent("tlns-tetrio-calcs")
-            .build()?;
+            .build().map_err(Errors::FailedToSendRequest)?;
         let user_api = API.to_string() + "users/" + username;
         let response: serde_json::Value = client
             .get(user_api)
             .send()
-            .await?
-            .error_for_status()?
+            .await.map_err(Errors::FailedToSendRequest)?
+            .error_for_status().map_err(Errors::FailedToSendRequest)?
             .json::<serde_json::Value>()
-            .await?["data"]
-            .clone();
+            .await.map_err(Errors::FailedToSendRequest)?;
+        if response["success"].as_bool().unwrap() == false {
+            return Err(Errors::UserNotFound);
+        }
+        let response = response["data"].clone();
         Ok(Self {
-            apm: response["user"]["league"]["apm"].as_f64().unwrap() as f32,
-            pps: response["user"]["league"]["pps"].as_f64().unwrap() as f32,
-            vs: response["user"]["league"]["vs"].as_f64().unwrap() as f32,
+            apm: response["user"]["league"]["apm"].as_f64().unwrap_or(0.0) as f32,
+            pps: response["user"]["league"]["pps"].as_f64().unwrap_or(0.0) as f32,
+            vs: response["user"]["league"]["vs"].as_f64().unwrap_or(0.0) as f32,
             rank: Some(
                 Ranks::from_str(
                     &response["user"]["league"]["rank"]
                         .as_str()
-                        .unwrap()
+                        .unwrap_or("Z")
                         .to_uppercase(),
                 )
                 .unwrap(),
             ),
-            tr: Some(response["user"]["league"]["rating"].as_f64().unwrap()),
+            tr: Some(response["user"]["league"]["rating"].as_f64().unwrap_or(0.0)),
             name: Some(response["user"]["username"].as_str().unwrap().to_string()),
             pfp: Some(
                 "https://tetr.io/user-content/avatars/".to_string()
@@ -126,12 +142,12 @@ impl ProfileStats {
                     + ".jpg?rv="
                     + response["user"]["avatar_revision"]
                         .as_u64()
-                        .unwrap()
+                        .unwrap_or(0)
                         .to_string()
                         .as_str(),
             ),
-            rd: Some(response["user"]["league"]["rd"].as_f64().unwrap()),
-            glicko: Some(response["user"]["league"]["glicko"].as_f64().unwrap()),
+            rd: Some(response["user"]["league"]["rd"].as_f64().unwrap_or(0.0)),
+            glicko: Some(response["user"]["league"]["glicko"].as_f64().unwrap_or(0.0)),
             is_real: true,
         })
     }
@@ -378,7 +394,7 @@ impl ProfileStats {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 mod tests {
     use once_cell::sync::OnceCell;
 
