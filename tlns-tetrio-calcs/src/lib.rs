@@ -4,6 +4,7 @@ use reqwest::ClientBuilder;
 
 const API: &'static str = "https://ch.tetr.io/api/";
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProfileStats {
     pub apm: f32,
     pub pps: f32,
@@ -14,6 +15,7 @@ pub struct ProfileStats {
     pub pfp: Option<String>,
     pub glicko: Option<f64>,
     pub rd: Option<f64>,
+    pub is_real: bool,
 }
 
 macro_rules! enum_from_string {
@@ -107,30 +109,45 @@ impl ProfileStats {
             apm: response["user"]["league"]["apm"].as_f64().unwrap() as f32,
             pps: response["user"]["league"]["pps"].as_f64().unwrap() as f32,
             vs: response["user"]["league"]["vs"].as_f64().unwrap() as f32,
-            rank: Some(Ranks::from_str(&response["user"]["league"]["rank"].as_str().unwrap().to_uppercase())
-                .unwrap()),
+            rank: Some(
+                Ranks::from_str(
+                    &response["user"]["league"]["rank"]
+                        .as_str()
+                        .unwrap()
+                        .to_uppercase(),
+                )
+                .unwrap(),
+            ),
             tr: Some(response["user"]["league"]["rating"].as_f64().unwrap()),
             name: Some(response["user"]["username"].as_str().unwrap().to_string()),
             pfp: Some(
                 "https://tetr.io/user-content/avatars/".to_string()
                     + response["user"]["_id"].as_str().unwrap()
                     + ".jpg?rv="
-                    + response["user"]["avatar_revision"].as_u64().unwrap().to_string().as_str(),
+                    + response["user"]["avatar_revision"]
+                        .as_u64()
+                        .unwrap()
+                        .to_string()
+                        .as_str(),
             ),
             rd: Some(response["user"]["league"]["rd"].as_f64().unwrap()),
             glicko: Some(response["user"]["league"]["glicko"].as_f64().unwrap()),
+            is_real: true,
         })
     }
 
     pub fn from_stat(apm: f32, pps: f32, vs: f32) -> Self {
         Self {
-            apm, pps, vs,
+            apm,
+            pps,
+            vs,
             rank: None,
             tr: None,
             name: None,
             pfp: None,
-            glicko: None,
-            rd: None
+            glicko: Some(60.0), // statPlayer = new Player("EXAMPLE", name[0], name[1], name[2], 0, 0, 60, null) but why?
+            rd: None,
+            is_real: false,
         }
     }
 
@@ -207,7 +224,7 @@ impl ProfileStats {
     pub fn accuracy_tr(&self) -> f64 {
         match self.tr {
             Some(i) => self.estimated_tr() - i,
-            None => 0.0
+            None => 0.0,
         }
     }
 
@@ -377,6 +394,7 @@ mod tests {
         pfp: None,
         glicko: Some(2257.86),
         rd: Some(66.04),
+        is_real: true,
     });
 
     #[test]
@@ -486,7 +504,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_pfp() {
-        let _ = ProfileStats::from_username("timelessnesses").await.expect("Failed to fetch profile");
+        let _ = ProfileStats::from_username("timelessnesses")
+            .await
+            .expect("Failed to fetch profile");
     }
 }
 
