@@ -9,7 +9,6 @@ serenity = { version = "0.12.2", features = ["default_native_tls", "native_tls_b
 tokio = { version = "1.38.1", features = ["macros", "rt-multi-thread", "time"] }
 tlns-tetrio-calcs = { path = "./tlns-tetrio-calcs" }
 tlns-plotter = { path = "./tlns-plotter" }
-sea-orm = { version = "0.12.15", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "runtime-tokio-native-tls", "macros"] }
 dotenv = "0.15.0"
 better-panic = "0.3.0"
 env_logger = "0.11.3"
@@ -23,7 +22,7 @@ regex = "1.10.5"
 fern = { version = "0.6.2", features = ["chrono", "colored", "date-based", "meta-logging-in-format"] }
 
 [workspace]
-members = ["tlns-plotter","tlns-tetrio-calcs", "migration"]
+members = ["tlns-plotter","tlns-tetrio-calcs"]
 
 [profile.release]
 lto = "fat"

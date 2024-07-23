@@ -7,7 +7,7 @@ use rayon::{
 use tlns_tetrio_calcs::ProfileStats;
 
 mod commands;
-mod db;
+// mod db;
 mod state;
 mod types;
 
@@ -155,14 +155,15 @@ async fn initialize_data(
 
 #[tokio::main]
 async fn main() {
+    dotenv::dotenv().ok();
     setup_logging();
     better_panic::Settings::new()
         .verbosity(better_panic::Verbosity::Full)
         .install();
-    let db = db::connect_to_db()
-        .await
-        .expect("Failed to connect to database");
-    let cloned = db.clone();
+    // let db = db::connect_to_db()
+    //     .await
+    //     .expect("Failed to connect to database");
+    // let cloned = db.clone();
 
     let player_list = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let average_players = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
@@ -170,14 +171,14 @@ async fn main() {
 
     let cloned_player_list = player_list.clone();
     let cloned_average_players = average_players.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::new(5, 0)).await;
-            if cloned.ping().await.is_err() {
-                panic!("Database disconnected!!");
-            }
-        }
-    });
+    // tokio::spawn(async move {
+    //     loop {
+    //         tokio::time::sleep(std::time::Duration::new(5, 0)).await;
+    //         if cloned.ping().await.is_err() {
+    //             panic!("Database disconnected!!");
+    //         }
+    //     }
+    // });
 
     tokio::spawn(async move {
         loop {

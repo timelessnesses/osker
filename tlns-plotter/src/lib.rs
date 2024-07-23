@@ -1,16 +1,14 @@
-use std::io::Cursor;
 
 use charming;
-use image::{Rgb, RgbImage};
 
 pub fn plot_radar_one<const N: usize>(
     datas: [f64; N],
-    thetas: [String; N],
+    mut thetas: [String; N],
     chart_name: String,
-    weights: [f64; N],
 ) -> Vec<u8> {
-    let width = 2000;
-    let height = 2000;
+    thetas.reverse();
+    let width = 1000;
+    let height = 800;
     let chart = charming::Chart::new()
         .color(vec![
             charming::element::Color::Value("#67F9D8".to_string()),
@@ -28,17 +26,16 @@ pub fn plot_radar_one<const N: usize>(
         .radar(
             charming::component::RadarCoordinate::new()
                 .indicator(
-                    weights
-                        .iter()
-                        .enumerate()
-                        .map(|(i, w)| (thetas[i].as_str(), 0.0_f64, *w))
-                        .collect(),
+                    thetas.iter().map(|i| {
+                        charming::component::RadarIndicator::new().name(i)
+                    }).collect()
                 )
-                .radius(120)
+                .radius(240)
                 .axis_name(
                     charming::component::RadarAxisName::new()
-                        .color("#fff")
-                        .padding((3, 5)),
+                        .color("#739ee7")
+                        .padding((3, 5))
+                        .font_size(20),
                 ),
         )
         .series(charming::series::Series::Radar(
@@ -56,7 +53,7 @@ pub fn plot_radar_one<const N: usize>(
                             .collect(),
                     ),
                 )])
-                .symbol(charming::element::Symbol::None)
+                .symbol(charming::element::Symbol::Circle)
                 .symbol_size(9)
                 .line_style(charming::element::LineStyle::new().type_(charming::element::LineStyleType::Solid)),
         ));
