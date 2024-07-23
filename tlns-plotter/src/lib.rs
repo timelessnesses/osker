@@ -1,99 +1,69 @@
 use std::io::Cursor;
 
-use plotters::{
-    self,
-    backend::BitMapBackend,
-    chart::ChartBuilder,
-    drawing::IntoDrawingArea,
-    element::{PathElement, Polygon, Text},
-    prelude::{RGBAColor, Rectangle, BLACK, BLUE, WHITE},
-    style::{Color, IntoFont},
-};
-
+use charming;
 use image::{Rgb, RgbImage};
 
 pub fn plot_radar_one<const N: usize>(
     datas: [f64; N],
     thetas: [String; N],
     chart_name: String,
+    weights: [f64; N],
 ) -> Vec<u8> {
     let width = 2000;
     let height = 2000;
-    let mut buffer = vec![0; width * height * 3];
-    {
-        let image = BitMapBackend::with_buffer(&mut buffer, (width as u32, height as u32));
-        let drawing = image.into_drawing_area();
-        drawing.fill(&WHITE).expect("Failed to fill drawing area");
-
-        let mut chart = ChartBuilder::on(&drawing)
-            .caption(chart_name, ("sans-serif", 120))
-            .build_cartesian_2d(-1.5..1.5, -1.5..1.5)
-            .expect("Failed to build chart");
-
-        let dimensions = N;
-        let angles = (0..dimensions)
-            .map(|i| 2.0 * core::f64::consts::PI * (i as f64) / (dimensions as f64))
-            .collect::<Vec<f64>>();
-
-        // Find the maximum value in the dataset for normalization
-        let max_value = datas.iter().copied().fold(0.0, f64::max);
-
-        let coords = angles
-            .iter()
-            .zip(datas.iter())
-            .map(|(a, v)| ((v / max_value) * a.cos(), (v / max_value) * a.sin()))
-            .collect::<Vec<(f64, f64)>>();
-
-        chart
-            .draw_series(std::iter::once(Polygon::new(coords.clone(), BLUE)))
-            .expect("Failed to draw polygon");
-
-        chart
-            .draw_series(std::iter::once(PathElement::new(
-                (0..=360)
-                    .map(|angle| {
-                        let rad = angle as f64 * core::f64::consts::PI / 180.0;
-                        (rad.cos(), rad.sin())
-                    })
-                    .collect::<Vec<(f64, f64)>>(),
-                BLACK.stroke_width(2),
-            )))
-            .expect("Failed to draw outer circle");
-
-        for a in &angles {
-            chart
-                .draw_series(std::iter::once(PathElement::new(
-                    vec![(0.0, 0.0), (a.cos(), a.sin())],
-                    &BLACK,
-                )))
-                .expect("Failed to draw paths");
-        }
-
-        for (angle, theta) in angles.iter().zip(thetas.iter()) {
-            // hacks
-            /* let x_offset = 0.2 * angle.cos();
-            let y_offset = 0.2 * angle.sin(); */
-            chart
-                .draw_series(std::iter::once(Text::new(
-                    theta.clone(),
-                    (angle.cos(), angle.sin()),
-                    ("sans-serif", 65),
-                )))
-                .unwrap();
-        }
-    }
-    let mut img = RgbImage::new(width as u32, height as u32);
-    for (i, pixel) in buffer.chunks_exact(3).enumerate() {
-        let x = (i % width) as u32;
-        let y = (i / width) as u32;
-        img.put_pixel(x, y, Rgb([pixel[0], pixel[1], pixel[2]]));
-    }
-
-    let mut png_data = Cursor::new(Vec::new());
-    img.write_to(&mut png_data, image::ImageFormat::Png)
-        .unwrap();
-
-    png_data.into_inner()
+    let chart = charming::Chart::new()
+        .color(vec![
+            charming::element::Color::Value("#67F9D8".to_string()),
+            charming::element::Color::Value("#FFE434".to_string()),
+            charming::element::Color::Value("#56A3F1".to_string()),
+            charming::element::Color::Value("#FF917C".to_string()),
+            charming::element::Color::Value("#67f976".to_string()),
+            charming::element::Color::Value("#e434ff".to_string()),
+        ])
+        .title(
+            charming::component::Title::new()
+                .text(chart_name)
+                .text_align(charming::element::TextAlign::Center),
+        )
+        .radar(
+            charming::component::RadarCoordinate::new()
+                .indicator(
+                    weights
+                        .iter()
+                        .enumerate()
+                        .map(|(i, w)| (thetas[i].as_str(), 0.0_f64, *w))
+                        .collect(),
+                )
+                .radius(120)
+                .axis_name(
+                    charming::component::RadarAxisName::new()
+                        .color("#fff")
+                        .padding((3, 5)),
+                ),
+        )
+        .series(charming::series::Series::Radar(
+            charming::series::Radar::new()
+                .radar_index(0)
+                .data(vec![charming::datatype::DataPoint::Value(
+                    charming::datatype::CompositeValue::Array(
+                        datas
+                            .iter()
+                            .map(|i| {
+                                charming::datatype::CompositeValue::Number(
+                                    charming::datatype::NumericValue::Float(*i),
+                                )
+                            })
+                            .collect(),
+                    ),
+                )])
+                .symbol(charming::element::Symbol::None)
+                .symbol_size(9)
+                .line_style(charming::element::LineStyle::new().type_(charming::element::LineStyleType::Solid)),
+        ));
+    let mut renderer = charming::ImageRenderer::new(width, height);
+    renderer
+        .render_format(charming::ImageFormat::Png, &chart)
+        .expect("Failed to render plot")
 }
 
 pub fn plot_radar_multiple<const N: usize, const A: usize>(
@@ -104,120 +74,5 @@ pub fn plot_radar_multiple<const N: usize, const A: usize>(
 ) -> Vec<u8> {
     let width = 2000;
     let height = 2000;
-    let mut buffer = vec![0; width * height * 3];
-    {
-        let image = BitMapBackend::with_buffer(&mut buffer, (width as u32, height as u32));
-        let drawing = image.into_drawing_area();
-        drawing.fill(&WHITE).expect("Failed to fill drawing area");
-
-        let mut chart = ChartBuilder::on(&drawing)
-            .caption(chart_name, ("sans-serif", 120))
-            .build_cartesian_2d(-1.5..1.5, -1.5..1.5)
-            .expect("Failed to build chart");
-
-        let dimensions = N;
-        let angles = (0..dimensions)
-            .map(|i| 2.0 * core::f64::consts::PI * (i as f64) / (dimensions as f64))
-            .collect::<Vec<f64>>();
-
-        // Define colors with transparency
-        let colors = vec![
-            RGBAColor(255, 0, 0, 0.3),     // RED with transparency
-            RGBAColor(0, 255, 0, 0.3),     // GREEN with transparency
-            RGBAColor(0, 0, 255, 0.3),     // BLUE with transparency
-            RGBAColor(0, 255, 255, 0.3),   // CYAN with transparency
-            RGBAColor(255, 20, 147, 0.3),  // PINK with transparency
-            RGBAColor(255, 255, 0, 0.3),   // YELLOW with transparency
-            RGBAColor(0, 0, 0, 0.3),       // BLACK with transparency
-            RGBAColor(255, 255, 255, 0.3), // WHITE with transparency
-        ];
-
-        // Find the maximum value in the dataset for normalization
-        let max_value = datas
-            .iter()
-            .flat_map(|data| data.iter().copied())
-            .fold(0.0, f64::max);
-
-        for (data, color) in datas.iter().zip(colors.iter().cycle()) {
-            let coords = angles
-                .iter()
-                .zip(data.iter())
-                .map(|(a, v)| ((v / max_value) * a.cos(), (v / max_value) * a.sin()))
-                .collect::<Vec<(f64, f64)>>();
-
-            chart
-                .draw_series(std::iter::once(Polygon::new(
-                    coords.clone(),
-                    color.filled(),
-                )))
-                .expect("Failed to draw polygon");
-        }
-
-        chart
-            .draw_series(std::iter::once(PathElement::new(
-                (0..=360)
-                    .map(|angle| {
-                        let rad = angle as f64 * core::f64::consts::PI / 180.0;
-                        (rad.cos(), rad.sin())
-                    })
-                    .collect::<Vec<(f64, f64)>>(),
-                BLACK.stroke_width(2),
-            )))
-            .expect("Failed to draw outer circle");
-
-        for a in &angles {
-            chart
-                .draw_series(std::iter::once(PathElement::new(
-                    vec![(0.0, 0.0), (a.cos(), a.sin())],
-                    &BLACK,
-                )))
-                .expect("Failed to draw paths");
-        }
-
-        for (angle, theta) in angles.iter().zip(thetas.iter()) {
-            chart
-                .draw_series(std::iter::once(Text::new(
-                    theta.clone(),
-                    (1.2 * angle.cos(), 1.2 * angle.sin()),
-                    ("sans-serif", 150),
-                )))
-                .unwrap();
-        }
-
-        // Draw legend
-        let legend_height = 40; // Match the rectangle height
-        let legend_width = 40;
-        let legend_margin = 10;
-        let legend_x = 200;
-        let legend_y = 200;
-
-        for (i, (marker, color)) in markers.iter().zip(colors.iter().cycle()).enumerate() {
-            let y = legend_y - i as i32 * (legend_height + legend_margin);
-            drawing
-                .draw(&Rectangle::new(
-                    [(legend_x, y), (legend_x + legend_width, y + legend_height)],
-                    color.filled(),
-                ))
-                .unwrap();
-            drawing
-                .draw(&Text::new(
-                    marker.clone(),
-                    (legend_x + legend_width + 10, y + legend_height / 2),
-                    ("sans-serif", 60).into_font().color(&BLACK),
-                ))
-                .unwrap();
-        }
-    }
-    let mut img = RgbImage::new(width as u32, height as u32);
-    for (i, pixel) in buffer.chunks_exact(3).enumerate() {
-        let x = (i % width) as u32;
-        let y = (i / width) as u32;
-        img.put_pixel(x, y, Rgb([pixel[0], pixel[1], pixel[2]]));
-    }
-
-    let mut png_data = Cursor::new(Vec::new());
-    img.write_to(&mut png_data, image::ImageFormat::Png)
-        .unwrap();
-
-    png_data.into_inner()
+    todo!()
 }
