@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-poise = "0.6.1"
-serenity = { version = "0.12.2", features = ["default_native_tls", "native_tls_backend"] }
-tokio = { version = "1.38.1", features = ["macros", "rt-multi-thread", "time"] }
 tlns-tetrio-calcs = { path = "./tlns-tetrio-calcs" }
 tlns-plotter = { path = "./tlns-plotter" }
+poise = "0.6.1"
+serenity = { version = "0.12.2", features = ["default_native_tls", "native_tls_backend", "default_no_backend"], default-features = false }
+tokio = { version = "1.38.1", features = ["macros", "rt-multi-thread", "time"] }
 dotenv = "0.15.0"
 better-panic = "0.3.0"
 env_logger = "0.11.3"

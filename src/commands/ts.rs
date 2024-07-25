@@ -64,10 +64,7 @@ pub async fn ts(
     let embed = build_player_embed(
         &player,
         match is_avg_rank {
-            true => Some(format!(
-                "AVERAGE STATS ON RANK {}",
-                player.rank.unwrap()
-            )),
+            true => Some(format!("AVERAGE STATS ON RANK {}", player.rank.unwrap())),
             false => None,
         },
         fetched_from_api,
@@ -148,3 +145,4 @@ fn build_player_embed(
             false => "This command used it's own interal cache (that is refreshed every 5 minutes)"
         }))
 }
+// i love men
