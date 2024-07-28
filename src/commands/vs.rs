@@ -1,20 +1,26 @@
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use tlns_plotter;
 
-/// Displays stats of a user in a table list.
+/// Compares the stats of two users (or one) with more stats.
 #[poise::command(prefix_command, slash_command)]
 pub async fn vs(
     ctx: crate::types::Context<'_>,
-    #[description = "Players"] players: Vec<String>,
+    #[description = "Players string, supported"] players: Vec<String>,
 ) -> Result<(), crate::types::Error> {
-    if players.len() == 1 {
+    let is_stat = check_is_stat(&players);
+    if players.len() == 1 || is_stat {
         let locked = ctx.data().player_lists.lock().await;
-        let player = match locked
-            .par_iter()
-            .find_first(|i| i.name.clone().unwrap().to_lowercase() == players[0].to_lowercase())
-        {
-            Some(i) => i.clone(),
-            None => tlns_tetrio_calcs::ProfileStats::from_username(&players[0]).await?,
+        let player = match is_stat {
+            true => tlns_tetrio_calcs::ProfileStats::from_stat(
+                players[0].parse().unwrap(),
+                players[1].parse().unwrap(),
+                players[2].parse().unwrap(),
+            ),
+            false => locked
+                .par_iter()
+                .find_first(|i| i.name.clone().unwrap().eq_ignore_ascii_case(&players[0]))
+                .map(|i| i.clone())
+                .unwrap_or(tlns_tetrio_calcs::ProfileStats::from_username(&players[0]).await?),
         };
         let bytes = tlns_plotter::plot_radar_one(
             [
@@ -111,12 +117,28 @@ pub async fn vs(
                 "Garbage Efficiency".to_string(),
             ],
             new_batch.iter().map(|i| i.name.clone().unwrap()).collect(),
-            "".to_string(),
+            "t".to_string(),
         );
-        ctx.send(poise::CreateReply::default().attachment(
-            poise::serenity_prelude::CreateAttachment::bytes(bytes, "stat.png"),
-        ))
+        let colors = vec!["mint", "yellow", "blurple", "orange", "green", "purple"];
+        ctx.send(
+            poise::CreateReply::default()
+                .attachment(poise::serenity_prelude::CreateAttachment::bytes(
+                    bytes, "stat.png",
+                ))
+                .content(
+                    new_batch
+                        .iter()
+                        .zip(colors.iter().cycle())
+                        .map(|(i, c)| format!("{} is {} color", i.name.clone().unwrap(), c))
+                        .collect::<Vec<String>>()
+                        .join("\n"),
+                ),
+        )
         .await?;
     }
     Ok(())
+}
+
+fn check_is_stat(info: &Vec<String>) -> bool {
+    info.par_iter().all(|i| i.parse::<i128>().is_ok()) && info.len() == 3
 }
