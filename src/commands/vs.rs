@@ -9,7 +9,7 @@ pub async fn vs(
 ) -> Result<(), crate::types::Error> {
     let is_stat = check_is_stat(&players);
     if players.len() == 1 || is_stat {
-        let locked = ctx.data().player_lists.lock().await;
+        let locked = ctx.data().player_lists.read().await;
         let player = match is_stat {
             true => tlns_tetrio_calcs::ProfileStats::from_stat(
                 players[0].parse().unwrap(),
@@ -55,7 +55,7 @@ pub async fn vs(
         ))
         .await?;
     } else {
-        let locked = ctx.data().player_lists.lock().await;
+        let locked = ctx.data().player_lists.read().await;
         let player = players
             .par_iter()
             .enumerate()

@@ -5,60 +5,58 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex;
 
 const FUNNY_IMAGE: &str = "https://statics.timelessnesses.me/poiuu_drawings/sd.png";
-const DETECT_AVG_PATTERN: &str = r"(?m)^\$avg([a-zA-Z])$"; // my genius brain made this yay
+const DETECT_AVG_PATTERN: &str = r"(?m)\$avg(ALL|[a-zA-Z])(.*)"; // my genius brain made this yay
 pub const ZERO_WIDTH_SPACE: &str = "\u{200b}";
 
 /// Displays stats of a user in a table list.
 #[poise::command(prefix_command, slash_command)]
 pub async fn ts(
     ctx: crate::types::Context<'_>,
-    #[description = "Argument that supports custom 'APM PPS VS' value or username or $avg`Rank`"]
+    #[description = "Argument that supports custom 'APM PPS VS' value or username or $avg`Rank or ALL`"]
     args: Vec<String>,
 ) -> Result<(), crate::types::Error> {
     ctx.defer().await?;
-
-    let mut players_list = ctx.data().player_lists.lock().await;
-    let average_players = ctx.data().avg_players.lock().await;
-    let mut should_add = false;
     let player: tlns_tetrio_calcs::ProfileStats;
-    let mut fetched_from_api = false;
+    let mut should_add = false;
     let mut is_avg_rank = false;
+    let mut fetched_from_api = false;
 
-    if args.len() == 3 {
-        player = tlns_tetrio_calcs::ProfileStats::from_stat(
-            args[0].parse()?,
-            args[1].parse()?,
-            args[2].parse()?,
-        );
-    } else {
-        let r = regex::Regex::new(DETECT_AVG_PATTERN)?;
-        if let Some(avg_rank) = r.captures(&args[0]) {
-            let rank = avg_rank
-                .get(1)
-                .ok_or(crate::errors::Errors::RankNotFoundError)?;
-            player = if let Some(avg) = average_players.iter().find(|i| {
-                i.rank.unwrap()
-                    == tlns_tetrio_calcs::Ranks::from_str(&rank.as_str().to_lowercase()).unwrap()
-            }) {
-                is_avg_rank = true;
-                avg.clone()
-            } else {
-                return Err(crate::errors::Errors::RankNotFoundError.into());
-            };
-        } else if let Some(p) = players_list
-            .par_iter()
-            .find_first(|i| i.name.clone().unwrap_or_default() == args[0])
-        {
-            player = p.clone();
+    {
+        let players_list = ctx.data().player_lists.read().await;
+        let average_players = ctx.data().avg_players.read().await;
+
+        if args.len() == 3 {
+            player = tlns_tetrio_calcs::ProfileStats::from_stat(
+                args[0].parse()?,
+                args[1].parse()?,
+                args[2].parse()?,
+            );
         } else {
-            player = tlns_tetrio_calcs::ProfileStats::from_username(&args[0]).await?;
-            should_add = true;
-            fetched_from_api = true;
+            let r = regex::Regex::new(DETECT_AVG_PATTERN)?;
+            if let Some(_) = r.captures(&args[0]) {
+                player = if let Some(avg) = average_players
+                    .iter()
+                    .find(|i| *i.name.as_ref().unwrap() == args[0])
+                {
+                    is_avg_rank = true;
+                    avg.clone()
+                } else {
+                    return Err(crate::errors::Errors::RankNotFoundError.into());
+                };
+            } else if let Some(p) = players_list
+                .par_iter()
+                .find_first(|i| i.name.clone().unwrap_or_default() == args[0])
+            {
+                player = p.clone();
+            } else {
+                player = tlns_tetrio_calcs::ProfileStats::from_username(&args[0]).await?;
+                should_add = true;
+                fetched_from_api = true;
+            }
         }
     }
-
     if should_add {
-        players_list.push(player.clone());
+        ctx.data().player_lists.write().await.push(player.clone());
     }
 
     let embed = build_player_embed(
@@ -80,6 +78,7 @@ fn build_player_embed(
     custom_title: Option<String>,
     is_fetched_from_api: bool,
 ) -> poise::serenity_prelude::CreateEmbed {
+    let sign = if player.accuracy_tr() > 0.0 { "+" } else { "" };
     poise::serenity_prelude::CreateEmbed::new()
         .colour(poise::serenity_prelude::Color::from_rgb(0, 153, 255))
         .title(match custom_title {
@@ -125,7 +124,7 @@ fn build_player_embed(
                 "➤Area: **".to_string() + &tlns_tetrio_calcs::truncate(player.area(), 4).to_string() + "**\n" +
                 "➤TR: **" + &tlns_tetrio_calcs::truncate(player.tr.unwrap(), 2).to_string() + "**\n" +
                 "➤Estimated TR: **" + &tlns_tetrio_calcs::truncate(player.estimated_tr(), 2).to_string() + "**\n" +
-                "➤Estimated TR Accuracy: **" + &tlns_tetrio_calcs::truncate(player.accuracy_tr(), 2).to_string() + "**\n" +
+                "➤Estimated TR Accuracy: **" + sign + &tlns_tetrio_calcs::truncate(player.accuracy_tr(), 2).to_string() + "**\n" +
                 "➤Glicko±RD: **" + &tlns_tetrio_calcs::truncate(player.glicko.unwrap(), 2).to_string() + "**±" + &tlns_tetrio_calcs::truncate(player.rd.unwrap(), 2).to_string() + "\n\n"
             },
             false => {

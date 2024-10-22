@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use reqwest::ClientBuilder;
 
-const API: &'static str = "https://ch.tetr.io/api/";
+pub const API: &'static str = "https://ch.tetr.io/api/";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProfileStats {
@@ -20,7 +20,7 @@ pub struct ProfileStats {
 
 macro_rules! enum_from_string {
     ($name:ident { $($variant:ident),* }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
         pub enum $name {
             $($variant),*
         }
@@ -47,6 +47,8 @@ macro_rules! enum_from_string {
 }
 
 enum_from_string!(Ranks {
+    ALL,
+    XPlus,
     X,
     U,
     SS,
@@ -111,7 +113,8 @@ impl ProfileStats {
             .build()
             .map_err(Errors::FailedToSendRequest)?;
         let user_api = API.to_string() + "users/" + username;
-        let response: serde_json::Value = client
+        let rank_summary = user_api.clone() + "/summaries/league";
+        let user_info: serde_json::Value = client
             .get(user_api)
             .send()
             .await
@@ -121,37 +124,42 @@ impl ProfileStats {
             .json::<serde_json::Value>()
             .await
             .map_err(Errors::FailedToSendRequest)?;
-        if response["success"].as_bool().unwrap() == false {
+        let rank_info: serde_json::Value = client
+            .get(rank_summary)
+            .send()
+            .await
+            .map_err(Errors::FailedToSendRequest)?
+            .error_for_status()
+            .map_err(Errors::FailedToSendRequest)?
+            .json::<serde_json::Value>()
+            .await
+            .map_err(Errors::FailedToSendRequest)?;
+        if user_info["success"].as_bool().unwrap_or(false) == false {
             return Err(Errors::UserNotFound);
         }
-        let response = response["data"].clone();
+        let user_info = user_info["data"].clone();
+        let rank_info = rank_info["data"].clone();
         Ok(Self {
-            apm: response["user"]["league"]["apm"].as_f64().unwrap_or(0.0) as f32,
-            pps: response["user"]["league"]["pps"].as_f64().unwrap_or(0.0) as f32,
-            vs: response["user"]["league"]["vs"].as_f64().unwrap_or(0.0) as f32,
+            apm: rank_info["apm"].as_f64().unwrap_or(0.0) as f32,
+            pps: rank_info["pps"].as_f64().unwrap_or(0.0) as f32,
+            vs: rank_info["vs"].as_f64().unwrap_or(0.0) as f32,
             rank: Some(
-                Ranks::from_str(
-                    &response["user"]["league"]["rank"]
-                        .as_str()
-                        .unwrap_or("Z")
-                        .to_uppercase(),
-                )
-                .unwrap(),
+                Ranks::from_str(&rank_info["rank"].as_str().unwrap_or("Z").to_uppercase()).unwrap(),
             ),
-            tr: Some(response["user"]["league"]["rating"].as_f64().unwrap_or(0.0)),
-            name: Some(response["user"]["username"].as_str().unwrap().to_string()),
+            tr: Some(rank_info["tr"].as_f64().unwrap_or(0.0)),
+            name: Some(user_info["username"].as_str().unwrap().to_string()),
             pfp: Some(
                 "https://tetr.io/user-content/avatars/".to_string()
-                    + response["user"]["_id"].as_str().unwrap()
+                    + user_info["_id"].as_str().unwrap()
                     + ".jpg?rv="
-                    + response["user"]["avatar_revision"]
+                    + user_info["avatar_revision"]
                         .as_u64()
                         .unwrap_or(0)
                         .to_string()
                         .as_str(),
             ),
-            rd: Some(response["user"]["league"]["rd"].as_f64().unwrap_or(0.0)),
-            glicko: Some(response["user"]["league"]["glicko"].as_f64().unwrap_or(0.0)),
+            rd: Some(rank_info["rd"].as_f64().unwrap_or(0.0)),
+            glicko: Some(rank_info["glicko"].as_f64().unwrap_or(0.0)),
             is_real: true,
         })
     }
@@ -524,9 +532,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_pfp() {
-        let _ = ProfileStats::from_username("timelessnesses")
+        let e = ProfileStats::from_username("timelessnesses")
             .await
             .expect("Failed to fetch profile");
+        eprintln!("{:#?}", e);
     }
 }
 

@@ -21,6 +21,7 @@ dashmap = { version = "6.0.1", features = ["inline", "rayon"] }
 regex = "1.10.5"
 fern = { version = "0.6.2", features = ["chrono", "colored", "date-based", "meta-logging-in-format"] }
 prettytable-rs = "0.10.0"
+ascii_table = "4.0.4"
 
 [workspace]
 members = ["tlns-plotter","tlns-tetrio-calcs"]
